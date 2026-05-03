@@ -1,0 +1,135 @@
+# --------------------------------------------------------------------------------
+# Workflow Name: Terraform Module Testing
+# Contributor(s): William Robinson
+# Created: February 2026
+# Updated: May 2026
+# Purpose: Run terraform tests on modules in the repository
+# --------------------------------------------------------------------------------
+
+name: Terraform Module Testing
+
+on:
+  push:
+    branches:
+      - "main"
+      - "module/*"
+  workflow_dispatch:
+    inputs:
+      developer:
+        description: "Developer pattern (e.g., hashicorp or *) - Leave as * for modified files"
+        required: false
+        type: string
+        default: "*"
+      provider:
+        description: "Provider pattern (e.g., azurerm or *) - Leave as * for modified files"
+        required: false
+        type: string
+        default: "*"
+      resource:
+        description: "Resource pattern(s) (comma-separated, e.g., api_management,storage_account or *) - Leave as * for modified files"
+        required: false
+        type: string
+        default: "*"
+      troubleshoot:
+        description: "Troubleshoot the workflow"
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  terraform_tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+          path: modules
+
+      - name: Copy Provider Level TF Files
+        run: |
+          find modules -maxdepth 3 -name "*.tf" ! -name "*.provider.tf" -exec cp -v {} . \;
+          if [ -d "modules/tests" ]; then
+            cp -r modules/tests ./tests
+          fi
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+
+      - name: Terraform fmt
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Init
+        run: terraform init -backend=false
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Test
+        run: |
+
+          shopt -s nullglob
+          TFVARS_FILES=()
+
+          # Check if manual inputs were provided
+          DEV_INPUT="${{ github.event.inputs.developer || '*' }}"
+          PROV_INPUT="${{ github.event.inputs.provider || '*' }}"
+          RES_INPUT="${{ github.event.inputs.resource || '*' }}"
+
+          if [[ "$DEV_INPUT" != "*" || "$PROV_INPUT" != "*" || "$RES_INPUT" != "*" ]]; then
+            echo "Manual override detected. Using patterns: $DEV_INPUT/$PROV_INPUT/$RES_INPUT"
+            
+            # Remove any spaces from RES_INPUT to handle "resource1, resource2"
+            RES_INPUT_CLEAN="${RES_INPUT// /}"
+            
+            IFS=',' read -ra RES_ARRAY <<< "$RES_INPUT_CLEAN"
+            for RES in "${RES_ARRAY[@]}"; do
+              # Find matching examples.tfvars based on manual input
+              for tfvars_file in modules/${DEV_INPUT}/${PROV_INPUT}/${RES}/examples.tfvars; do
+                if [[ -f "$tfvars_file" ]]; then
+                  TFVARS_FILES+=("${tfvars_file}")
+                fi
+              done
+            done
+          else
+            echo "No manual constraints provided. Checking latest commit for modified files..."
+            
+            # Find all modified files in the latest commit within the modules directory
+            MODIFIED_FILES=$(git -C modules diff-tree --no-commit-id --name-only -r HEAD)
+            
+            # Use an associative array to store unique directories
+            declare -A MODIFIED_DIRS
+            for FILE in $MODIFIED_FILES; do
+              DIR=$(dirname "$FILE")
+              MODIFIED_DIRS["$DIR"]=1
+            done
+            
+            for DIR in "${!MODIFIED_DIRS[@]}"; do
+              if [[ -f "modules/$DIR/examples.tfvars" ]]; then
+                TFVARS_FILES+=("modules/${DIR}/examples.tfvars")
+              fi
+            done
+          fi
+
+          if [ ${#TFVARS_FILES[@]} -eq 0 ]; then
+            echo "No modified resource folders with examples.tfvars found. Running terraform test without var-files."
+            terraform test
+          else
+            # Track overall success
+            EXIT_CODE=0
+            for tfvars_file in "${TFVARS_FILES[@]}"; do
+              echo "--------------------------------------------------------"
+              echo "Running terraform test -verbose -var-file=${tfvars_file}"
+              echo "--------------------------------------------------------"
+              
+              if [ "${TROUBLESHOOT}" = "true" ]; then
+                pwd
+                ls -la
+              fi
+              
+              terraform test -verbose -var-file="${tfvars_file}" || EXIT_CODE=$?
+            done
+            
+            # Exit with overall failure if any test failed
+            exit $EXIT_CODE
+          fi
