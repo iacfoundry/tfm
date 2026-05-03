@@ -19,7 +19,7 @@ resource "azurerm_virtual_network" "virtual_network" {
 
 
   dynamic "ddos_protection_plan" {
-    for_each = each.value.ddos_protection_plan != null ? each.value.ddos_protection_plan : []
+    for_each = each.value.ddos_protection_plan != null ? [each.value.ddos_protection_plan] : []
     content {
       # Required Arguments
       enable = ddos_protection_plan.value.enable
@@ -29,7 +29,7 @@ resource "azurerm_virtual_network" "virtual_network" {
   }
 
   dynamic "encryption" {
-    for_each = each.value.encryption != null ? each.value.encryption : []
+    for_each = each.value.encryption != null ? [each.value.encryption] : []
     content {
       # Required Arguments
       enforcement = encryption.value.enforcement
@@ -38,7 +38,7 @@ resource "azurerm_virtual_network" "virtual_network" {
   }
 
   dynamic "ip_address_pool" {
-    for_each = each.value.ip_address_pool != null ? each.value.ip_address_pool : []
+    for_each = each.value.ip_address_pool != null ? [each.value.ip_address_pool] : []
     content {
       # Required Arguments
       id                     = ip_address_pool.value.id
