@@ -10,23 +10,20 @@ name: Terraform Module Testing
 
 on:
   push:
-    branches:
-      - "main"
-      - "module/*"
   workflow_dispatch:
     inputs:
       developer:
-        description: "Developer pattern (e.g., hashicorp or *) - Leave as * for modified files"
+        description: "Developer pattern (e.g., hashicorp or *)"
         required: false
         type: string
         default: "*"
       provider:
-        description: "Provider pattern (e.g., azurerm or *) - Leave as * for modified files"
+        description: "Provider pattern (e.g., azurerm or *)"
         required: false
         type: string
         default: "*"
       resource:
-        description: "Resource pattern(s) (comma-separated, e.g., api_management,storage_account or *) - Leave as * for modified files"
+        description: "Resource pattern(s), comma-separated (e.g., resource_group,storage_account or *)"
         required: false
         type: string
         default: "*"
@@ -39,41 +36,135 @@ on:
 jobs:
   terraform_tests:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          fetch-depth: 2
+          fetch-depth: 0
           path: modules
 
       - name: Copy Provider Level TF Files
         run: |
           find modules -maxdepth 3 -name "*.tf" ! -name "*.provider.tf" -exec cp -v {} . \;
+
           if [ -d "modules/tests" ]; then
             cp -r modules/tests ./tests
           fi
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_wrapper: false
 
       - name: Terraform fmt
-        run: terraform fmt -check -recursive
+        run: terraform fmt -check -recursive -no-color
 
       - name: Terraform Init
-        run: terraform init -backend=false
+        run: terraform init -backend=false -no-color
 
       - name: Terraform Validate
-        run: terraform validate
+        run: terraform validate -no-color
 
       - name: Terraform Test
         env:
-          TROUBLESHOOT: ${{ github.event.inputs.troubleshoot || 'false' }}
+          TROUBLESHOOT: ${{ inputs.troubleshoot || 'false' }}
+          DEV_INPUT: ${{ inputs.developer || '*' }}
+          PROV_INPUT: ${{ inputs.provider || '*' }}
+          RES_INPUT: ${{ inputs.resource || '*' }}
         run: |
-
+          set -u
           shopt -s nullglob
+
           TFVARS_FILES=()
 
-          # Start GitHub Actions summary output
+          add_tfvars_file() {
+            local tfvars_file="$1"
+
+            if [[ -f "$tfvars_file" ]]; then
+              TFVARS_FILES+=("$tfvars_file")
+            fi
+          }
+
+          add_all_tfvars() {
+            while IFS= read -r tfvars_file; do
+              add_tfvars_file "$tfvars_file"
+            done < <(find modules -path "*/examples.tfvars" -type f | sort)
+          }
+
+          add_provider_tfvars() {
+            local developer="$1"
+            local provider="$2"
+
+            while IFS= read -r tfvars_file; do
+              add_tfvars_file "$tfvars_file"
+            done < <(find "modules/${developer}/${provider}" -mindepth 2 -maxdepth 2 -name "examples.tfvars" -type f 2>/dev/null | sort)
+          }
+
+          dedupe_tfvars_files() {
+            if [ ${#TFVARS_FILES[@]} -eq 0 ]; then
+              return
+            fi
+
+            mapfile -t TFVARS_FILES < <(printf "%s\n" "${TFVARS_FILES[@]}" | sort -u)
+          }
+
+          run_terraform_test() {
+            local test_target="$1"
+            local test_log="$2"
+            local test_exit_code=0
+
+            echo "--------------------------------------------------------"
+            echo "Running: ${test_target}"
+            echo "--------------------------------------------------------"
+
+            if [ "${TROUBLESHOOT}" = "true" ]; then
+              echo "Working directory:"
+              pwd
+
+              echo ""
+              echo "Root files:"
+              ls -la
+
+              echo ""
+              echo "Modules directory:"
+              ls -la modules || true
+
+              echo ""
+              echo "Tests directory:"
+              ls -la tests || true
+            fi
+
+            set +e
+
+            if [ "$test_target" = "terraform test" ]; then
+              terraform test -no-color -verbose 2>&1 | tee "$test_log"
+              test_exit_code=${PIPESTATUS[0]}
+            else
+              terraform test -no-color -verbose -var-file="$test_target" 2>&1 | tee "$test_log"
+              test_exit_code=${PIPESTATUS[0]}
+            fi
+
+            set -e
+
+            if [ "$test_exit_code" -eq 0 ]; then
+              echo "| \`${test_target}\` | ✅ Passed |" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "| \`${test_target}\` | ❌ Failed |" >> "$GITHUB_STEP_SUMMARY"
+            fi
+
+            {
+              echo ""
+              echo "## Output: ${test_target}"
+              echo ""
+              echo '```text'
+              tail -n 200 "$test_log"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+
+            return "$test_exit_code"
+          }
+
           {
             echo "# Terraform Test Results"
             echo ""
@@ -81,106 +172,152 @@ jobs:
             echo "|---|---|"
           } >> "$GITHUB_STEP_SUMMARY"
 
-          # Check if manual inputs were provided
-          DEV_INPUT="${{ github.event.inputs.developer || '*' }}"
-          PROV_INPUT="${{ github.event.inputs.provider || '*' }}"
-          RES_INPUT="${{ github.event.inputs.resource || '*' }}"
+          echo "GitHub event name: ${{ github.event_name }}"
 
-          if [[ "$DEV_INPUT" != "*" || "$PROV_INPUT" != "*" || "$RES_INPUT" != "*" ]]; then
-            echo "Manual override detected. Using patterns: $DEV_INPUT/$PROV_INPUT/$RES_INPUT"
-            
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "Manual workflow run detected."
+            echo "Using selected patterns: ${DEV_INPUT}/${PROV_INPUT}/${RES_INPUT}"
+
             RES_INPUT_CLEAN="${RES_INPUT// /}"
-            
+
             IFS=',' read -ra RES_ARRAY <<< "$RES_INPUT_CLEAN"
+
             for RES in "${RES_ARRAY[@]}"; do
               for tfvars_file in modules/${DEV_INPUT}/${PROV_INPUT}/${RES}/examples.tfvars; do
-                if [[ -f "$tfvars_file" ]]; then
-                  TFVARS_FILES+=("${tfvars_file}")
-                fi
+                add_tfvars_file "$tfvars_file"
               done
             done
+
           else
-            echo "No manual constraints provided. Checking latest commit for modified files..."
-            
-            MODIFIED_FILES=$(git -C modules diff-tree --no-commit-id --name-only -r HEAD)
-            
-            declare -A MODIFIED_DIRS
-            for FILE in $MODIFIED_FILES; do
-              DIR=$(dirname "$FILE")
-              MODIFIED_DIRS["$DIR"]=1
-            done
-            
-            for DIR in "${!MODIFIED_DIRS[@]}"; do
-              if [[ -f "modules/$DIR/examples.tfvars" ]]; then
-                TFVARS_FILES+=("modules/${DIR}/examples.tfvars")
-              fi
-            done
-          fi
+            echo "Push event detected."
+            echo "Finding changed files and mapping them to module resource folders."
 
-          if [ ${#TFVARS_FILES[@]} -eq 0 ]; then
-            echo "No modified resource folders with examples.tfvars found. Running terraform test without var-files."
+            BEFORE_SHA="${{ github.event.before }}"
+            CURRENT_SHA="${{ github.sha }}"
 
-            TEST_LOG="terraform-test-default.log"
-
-            set +e
-            terraform test -no-color -verbose 2>&1 | tee "$TEST_LOG"
-            TEST_EXIT_CODE=${PIPESTATUS[0]}
-            set -e
-
-            if [ "$TEST_EXIT_CODE" -eq 0 ]; then
-              echo "| terraform test | ✅ Passed |" >> "$GITHUB_STEP_SUMMARY"
+            if [[ -n "$BEFORE_SHA" && "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]]; then
+              MODIFIED_FILES=$(git -C modules diff --name-only "$BEFORE_SHA" "$CURRENT_SHA")
             else
-              echo "| terraform test | ❌ Failed |" >> "$GITHUB_STEP_SUMMARY"
+              MODIFIED_FILES=$(git -C modules diff-tree --no-commit-id --name-only -r "$CURRENT_SHA")
             fi
 
-            {
-              echo ""
-              echo "## terraform test output"
-              echo ""
-              echo '```text'
-              tail -n 200 "$TEST_LOG"
-              echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
+            echo "Modified files:"
+            echo "$MODIFIED_FILES"
 
-            exit "$TEST_EXIT_CODE"
+            if [[ -z "$MODIFIED_FILES" ]]; then
+              echo "No modified files detected from git diff."
+            fi
 
-          else
-            EXIT_CODE=0
-
-            for tfvars_file in "${TFVARS_FILES[@]}"; do
-              echo "--------------------------------------------------------"
-              echo "Running terraform test -verbose -var-file=${tfvars_file}"
-              echo "--------------------------------------------------------"
-              
-              if [ "${TROUBLESHOOT}" = "true" ]; then
-                pwd
-                ls -la
+            while IFS= read -r FILE; do
+              if [[ -z "$FILE" ]]; then
+                continue
               fi
 
+              # If shared tests changed, run all examples.
+              if [[ "$FILE" == tests/* ]]; then
+                echo "Shared test file changed: $FILE"
+                echo "Adding all examples.tfvars files."
+                add_all_tfvars
+                continue
+              fi
+
+              IFS='/' read -ra PARTS <<< "$FILE"
+
+              # Expected resource module path:
+              # developer/provider/resource/file
+              #
+              # Example:
+              # hashicorp/azurerm/resource_group/variables.tf
+              if [ "${#PARTS[@]}" -ge 4 ]; then
+                DEVELOPER="${PARTS[0]}"
+                PROVIDER="${PARTS[1]}"
+                RESOURCE="${PARTS[2]}"
+                RESOURCE_DIR="modules/${DEVELOPER}/${PROVIDER}/${RESOURCE}"
+
+                if [[ -f "${RESOURCE_DIR}/examples.tfvars" ]]; then
+                  echo "Changed resource module detected: ${RESOURCE_DIR}"
+                  add_tfvars_file "${RESOURCE_DIR}/examples.tfvars"
+                else
+                  echo "Changed file is under a folder without examples.tfvars: ${RESOURCE_DIR}"
+                fi
+
+                continue
+              fi
+
+              # Expected provider-level path:
+              # developer/provider/file
+              #
+              # Example:
+              # hashicorp/azurerm/variables.tf
+              #
+              # If provider-level files change, test all resources for that provider.
+              if [ "${#PARTS[@]}" -eq 3 ]; then
+                DEVELOPER="${PARTS[0]}"
+                PROVIDER="${PARTS[1]}"
+
+                echo "Provider-level file changed: $FILE"
+                echo "Adding all examples.tfvars under modules/${DEVELOPER}/${PROVIDER}"
+                add_provider_tfvars "$DEVELOPER" "$PROVIDER"
+
+                continue
+              fi
+
+              # Anything else is too broad to map safely.
+              # Run all examples so shared/root-level changes still get tested.
+              echo "Broad or unmapped change detected: $FILE"
+              echo "Adding all examples.tfvars files."
+              add_all_tfvars
+
+            done <<< "$MODIFIED_FILES"
+          fi
+
+          dedupe_tfvars_files
+
+          echo ""
+          echo "Selected examples.tfvars files:"
+          if [ ${#TFVARS_FILES[@]} -eq 0 ]; then
+            echo "None"
+          else
+            printf '%s\n' "${TFVARS_FILES[@]}"
+          fi
+
+          {
+            echo ""
+            echo "## Selected Test Inputs"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ ${#TFVARS_FILES[@]} -eq 0 ]; then
+            {
+              echo "No examples.tfvars files were selected."
+              echo ""
+              echo "Running default:"
+              echo ""
+              echo '```text'
+              echo "terraform test -no-color -verbose"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo '```text'
+              printf '%s\n' "${TFVARS_FILES[@]}"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          EXIT_CODE=0
+
+          if [ ${#TFVARS_FILES[@]} -eq 0 ]; then
+            TEST_LOG="terraform-test-default.log"
+
+            run_terraform_test "terraform test" "$TEST_LOG" || EXIT_CODE=$?
+          else
+            for tfvars_file in "${TFVARS_FILES[@]}"; do
               SAFE_NAME=$(echo "$tfvars_file" | sed 's#[/ ]#_#g')
               TEST_LOG="terraform-test-${SAFE_NAME}.log"
 
-              set +e
-              terraform test -verbose -var-file="${tfvars_file}" 2>&1 | tee "$TEST_LOG"
-              TEST_EXIT_CODE=${PIPESTATUS[0]}
-              set -e
-
-              if [ "$TEST_EXIT_CODE" -eq 0 ]; then
-                echo "| \`${tfvars_file}\` | ✅ Passed |" >> "$GITHUB_STEP_SUMMARY"
-              else
-                echo "| \`${tfvars_file}\` | ❌ Failed |" >> "$GITHUB_STEP_SUMMARY"
-                EXIT_CODE=$TEST_EXIT_CODE
-              fi
-
-              {
-                echo ""
-                echo "## Output: ${tfvars_file}"
-                echo ""
-                echo '```text'
-                tail -n 200 "$TEST_LOG"
-                echo '```'
-              } >> "$GITHUB_STEP_SUMMARY"
+              run_terraform_test "$tfvars_file" "$TEST_LOG" || EXIT_CODE=$?
             done
-            
-            exit $EXIT_CODE
           fi
+
+          exit "$EXIT_CODE"
