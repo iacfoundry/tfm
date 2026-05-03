@@ -177,16 +177,50 @@ jobs:
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             echo "Manual workflow run detected."
             echo "Using selected patterns: ${DEV_INPUT}/${PROV_INPUT}/${RES_INPUT}"
+            echo "Manual matching is case-insensitive."
 
-            RES_INPUT_CLEAN="${RES_INPUT// /}"
+            DEV_INPUT_CLEAN="$(echo "${DEV_INPUT// /}" | tr '[:upper:]' '[:lower:]')"
+            PROV_INPUT_CLEAN="$(echo "${PROV_INPUT// /}" | tr '[:upper:]' '[:lower:]')"
+            RES_INPUT_CLEAN="$(echo "${RES_INPUT// /}" | tr '[:upper:]' '[:lower:]')"
 
             IFS=',' read -ra RES_ARRAY <<< "$RES_INPUT_CLEAN"
 
-            for RES in "${RES_ARRAY[@]}"; do
-              for tfvars_file in modules/${DEV_INPUT}/${PROV_INPUT}/${RES}/examples.tfvars; do
-                add_tfvars_file "$tfvars_file"
+            while IFS= read -r tfvars_file; do
+              # Expected:
+              # modules/developer/provider/resource/examples.tfvars
+
+              REL_PATH="${tfvars_file#modules/}"
+
+              DEVELOPER_ACTUAL="$(echo "$REL_PATH" | cut -d'/' -f1)"
+              PROVIDER_ACTUAL="$(echo "$REL_PATH" | cut -d'/' -f2)"
+              RESOURCE_ACTUAL="$(echo "$REL_PATH" | cut -d'/' -f3)"
+
+              DEVELOPER_LOWER="$(echo "$DEVELOPER_ACTUAL" | tr '[:upper:]' '[:lower:]')"
+              PROVIDER_LOWER="$(echo "$PROVIDER_ACTUAL" | tr '[:upper:]' '[:lower:]')"
+              RESOURCE_LOWER="$(echo "$RESOURCE_ACTUAL" | tr '[:upper:]' '[:lower:]')"
+
+              if [[ "$DEV_INPUT_CLEAN" != "*" && "$DEV_INPUT_CLEAN" != "$DEVELOPER_LOWER" ]]; then
+                continue
+              fi
+
+              if [[ "$PROV_INPUT_CLEAN" != "*" && "$PROV_INPUT_CLEAN" != "$PROVIDER_LOWER" ]]; then
+                continue
+              fi
+
+              RESOURCE_MATCH=false
+
+              for RES in "${RES_ARRAY[@]}"; do
+                if [[ "$RES" == "*" || "$RES" == "$RESOURCE_LOWER" ]]; then
+                  RESOURCE_MATCH=true
+                  break
+                fi
               done
-            done
+
+              if [ "$RESOURCE_MATCH" = "true" ]; then
+                add_tfvars_file "$tfvars_file"
+              fi
+
+            done < <(find modules -path "*/examples.tfvars" -type f | sort)
 
           else
             echo "Push event detected."
