@@ -21,7 +21,7 @@ resource "azurerm_subnet" "subnet" {
 
 
   dynamic "delegation" {
-    for_each = each.value.delegation != null ? each.value.delegation : []
+    for_each = each.value.delegation != null ? [each.value.delegation] : []
     content {
       # Required Arguments
       name = delegation.value.name
