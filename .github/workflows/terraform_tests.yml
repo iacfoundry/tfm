@@ -66,10 +66,20 @@ jobs:
         run: terraform validate
 
       - name: Terraform Test
+        env:
+          TROUBLESHOOT: ${{ github.event.inputs.troubleshoot || 'false' }}
         run: |
 
           shopt -s nullglob
           TFVARS_FILES=()
+
+          # Start GitHub Actions summary output
+          {
+            echo "# Terraform Test Results"
+            echo ""
+            echo "| Test Target | Result |"
+            echo "|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
 
           # Check if manual inputs were provided
           DEV_INPUT="${{ github.event.inputs.developer || '*' }}"
@@ -79,12 +89,10 @@ jobs:
           if [[ "$DEV_INPUT" != "*" || "$PROV_INPUT" != "*" || "$RES_INPUT" != "*" ]]; then
             echo "Manual override detected. Using patterns: $DEV_INPUT/$PROV_INPUT/$RES_INPUT"
             
-            # Remove any spaces from RES_INPUT to handle "resource1, resource2"
             RES_INPUT_CLEAN="${RES_INPUT// /}"
             
             IFS=',' read -ra RES_ARRAY <<< "$RES_INPUT_CLEAN"
             for RES in "${RES_ARRAY[@]}"; do
-              # Find matching examples.tfvars based on manual input
               for tfvars_file in modules/${DEV_INPUT}/${PROV_INPUT}/${RES}/examples.tfvars; do
                 if [[ -f "$tfvars_file" ]]; then
                   TFVARS_FILES+=("${tfvars_file}")
@@ -94,10 +102,8 @@ jobs:
           else
             echo "No manual constraints provided. Checking latest commit for modified files..."
             
-            # Find all modified files in the latest commit within the modules directory
             MODIFIED_FILES=$(git -C modules diff-tree --no-commit-id --name-only -r HEAD)
             
-            # Use an associative array to store unique directories
             declare -A MODIFIED_DIRS
             for FILE in $MODIFIED_FILES; do
               DIR=$(dirname "$FILE")
@@ -113,10 +119,34 @@ jobs:
 
           if [ ${#TFVARS_FILES[@]} -eq 0 ]; then
             echo "No modified resource folders with examples.tfvars found. Running terraform test without var-files."
-            terraform test
+
+            TEST_LOG="terraform-test-default.log"
+
+            set +e
+            terraform test -verbose 2>&1 | tee "$TEST_LOG"
+            TEST_EXIT_CODE=${PIPESTATUS[0]}
+            set -e
+
+            if [ "$TEST_EXIT_CODE" -eq 0 ]; then
+              echo "| terraform test | ✅ Passed |" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "| terraform test | ❌ Failed |" >> "$GITHUB_STEP_SUMMARY"
+            fi
+
+            {
+              echo ""
+              echo "## terraform test output"
+              echo ""
+              echo '```text'
+              tail -n 200 "$TEST_LOG"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+
+            exit "$TEST_EXIT_CODE"
+
           else
-            # Track overall success
             EXIT_CODE=0
+
             for tfvars_file in "${TFVARS_FILES[@]}"; do
               echo "--------------------------------------------------------"
               echo "Running terraform test -verbose -var-file=${tfvars_file}"
@@ -126,10 +156,31 @@ jobs:
                 pwd
                 ls -la
               fi
-              
-              terraform test -verbose -var-file="${tfvars_file}" || EXIT_CODE=$?
+
+              SAFE_NAME=$(echo "$tfvars_file" | sed 's#[/ ]#_#g')
+              TEST_LOG="terraform-test-${SAFE_NAME}.log"
+
+              set +e
+              terraform test -verbose -var-file="${tfvars_file}" 2>&1 | tee "$TEST_LOG"
+              TEST_EXIT_CODE=${PIPESTATUS[0]}
+              set -e
+
+              if [ "$TEST_EXIT_CODE" -eq 0 ]; then
+                echo "| \`${tfvars_file}\` | ✅ Passed |" >> "$GITHUB_STEP_SUMMARY"
+              else
+                echo "| \`${tfvars_file}\` | ❌ Failed |" >> "$GITHUB_STEP_SUMMARY"
+                EXIT_CODE=$TEST_EXIT_CODE
+              fi
+
+              {
+                echo ""
+                echo "## Output: ${tfvars_file}"
+                echo ""
+                echo '```text'
+                tail -n 200 "$TEST_LOG"
+                echo '```'
+              } >> "$GITHUB_STEP_SUMMARY"
             done
             
-            # Exit with overall failure if any test failed
             exit $EXIT_CODE
           fi
