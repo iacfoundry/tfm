@@ -6,5 +6,6 @@ azurerm_virtual_network_data = {
     location            = "eastus"
     name                = "example-vnet-01"
     resource_group_name = "example-rg-01"
+    address_space       = "10.0.0.0/16"
   }
 }
