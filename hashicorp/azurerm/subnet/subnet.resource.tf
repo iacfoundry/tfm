@@ -42,7 +42,7 @@ resource "azurerm_subnet" "subnet" {
   }
 
   dynamic "ip_address_pool" {
-    for_each = each.value.ip_address_pool != null ? each.value.ip_address_pool : []
+    for_each = each.value.ip_address_pool != null ? [each.value.ip_address_pool] : []
     content {
       # Required Arguments
       id                     = ip_address_pool.value.id
