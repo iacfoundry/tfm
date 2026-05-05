@@ -8,7 +8,7 @@ module "azurerm_custom_ip_prefix" {
 module "azurerm_databricks_workspace" {
   source = "./modules/hashicorp/azurerm/databricks_workspace"
 
-  azurerm_databricks_workspace_data                        = module.azurerm_defaults.merge["azurerm_databricks_workspace"]
+  azurerm_databricks_workspace_data                        = var.azurerm_databricks_workspace_data
   azurerm_subnet_network_security_group_association_output = module.azurerm_subnet_network_security_group_association.azurerm_subnet_network_security_group_association_output
   azurerm_virtual_network_output                           = module.azurerm_virtual_network.azurerm_virtual_network_output_names
 }
@@ -112,6 +112,12 @@ module "azurerm_subnet_route_table_association" {
   azurerm_subnet_route_table_association_data = var.azurerm_subnet_route_table_association_data
   azurerm_route_table_output                  = module.azurerm_route_table.azurerm_route_table_output_names
   azurerm_subnet_output                       = module.azurerm_subnet.azurerm_subnet_output_names
+}
+
+module "azurerm_user_assigned_identity" {
+  source = "./modules/hashicorp/azurerm/user_assigned_identity"
+
+  azurerm_user_assigned_identity_data = var.azurerm_user_assigned_identity_data
 }
 
 module "azurerm_virtual_network" {

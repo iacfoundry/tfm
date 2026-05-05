@@ -2,6 +2,18 @@ variable "azurerm_custom_ip_prefix_data" {
   default = {}
 }
 
+variable "azurerm_databricks_workspace_data" {
+  default = {}
+}
+
+variable "azurerm_key_vault_data" {
+  default = {}
+}
+
+variable "azurerm_key_vault_secret_data" {
+  default = {}
+}
+
 variable "azurerm_nat_gateway_data" {
   default = {}
 }
@@ -47,6 +59,10 @@ variable "azurerm_subnet_network_security_group_association_data" {
 }
 
 variable "azurerm_subnet_route_table_association_data" {
+  default = {}
+}
+
+variable "azurerm_user_assigned_identity_data" {
   default = {}
 }
 
