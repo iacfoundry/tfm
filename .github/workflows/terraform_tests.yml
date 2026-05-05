@@ -10,6 +10,9 @@ name: Terraform Module Testing
 
 on:
   push:
+    branches:
+      - "**"
+
   workflow_dispatch:
     inputs:
       developer:
@@ -23,7 +26,8 @@ on:
         type: string
         default: "*"
       resource:
-        description: "Resource pattern(s), comma-separated (e.g., resource_group,storage_account or *)"
+        description: "Resource pattern(s), comma-separated (e.g.,
+          resource_group,storage_account or *)"
         required: false
         type: string
         default: "*"
@@ -46,7 +50,7 @@ jobs:
 
       - name: Copy Provider Level TF Files
         run: |
-          find modules -maxdepth 3 -name "*.tf" ! -name "*.provider.tf" -exec cp -v {} . \;
+          find modules -maxdepth 3 -name "*.tf" -exec cp -v {} . \;
 
           if [ -d "modules/tests" ]; then
             cp -r modules/tests ./tests
@@ -77,6 +81,10 @@ jobs:
           shopt -s nullglob
 
           TFVARS_FILES=()
+
+          # Initialize temporary files for summary components
+          TABLE_ROWS_FILE=$(mktemp)
+          DETAILS_FILE=$(mktemp)
 
           add_tfvars_file() {
             local tfvars_file="$1"
@@ -148,29 +156,24 @@ jobs:
             set -e
 
             if [ "$test_exit_code" -eq 0 ]; then
-              echo "| \`${test_target}\` | ✅ Passed |" >> "$GITHUB_STEP_SUMMARY"
+              echo "| \`${test_target}\` | ✅ Passed |" >> "$TABLE_ROWS_FILE"
             else
-              echo "| \`${test_target}\` | ❌ Failed |" >> "$GITHUB_STEP_SUMMARY"
+              echo "| \`${test_target}\` | ❌ Failed |" >> "$TABLE_ROWS_FILE"
             fi
 
             {
               echo ""
-              echo "## Output: ${test_target}"
+              echo "<details>"
+              echo "<summary><strong>Output: ${test_target}</strong></summary>"
               echo ""
               echo '```text'
               tail -n 200 "$test_log"
               echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
+              echo "</details>"
+            } >> "$DETAILS_FILE"
 
             return "$test_exit_code"
           }
-
-          {
-            echo "# Terraform Test Results"
-            echo ""
-            echo "| Test Target | Result |"
-            echo "|---|---|"
-          } >> "$GITHUB_STEP_SUMMARY"
 
           echo "GitHub event name: ${{ github.event_name }}"
 
@@ -315,30 +318,6 @@ jobs:
             printf '%s\n' "${TFVARS_FILES[@]}"
           fi
 
-          {
-            echo ""
-            echo "## Selected Test Inputs"
-            echo ""
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          if [ ${#TFVARS_FILES[@]} -eq 0 ]; then
-            {
-              echo "No examples.tfvars files were selected."
-              echo ""
-              echo "Running default:"
-              echo ""
-              echo '```text'
-              echo "terraform test -no-color -verbose"
-              echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
-          else
-            {
-              echo '```text'
-              printf '%s\n' "${TFVARS_FILES[@]}"
-              echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
-          fi
-
           EXIT_CODE=0
 
           if [ ${#TFVARS_FILES[@]} -eq 0 ]; then
@@ -353,5 +332,31 @@ jobs:
               run_terraform_test "$tfvars_file" "$TEST_LOG" || EXIT_CODE=$?
             done
           fi
+
+          # --------------------------------------------------------
+          # Assemble GitHub Step Summary
+          # --------------------------------------------------------
+          {
+            echo "# Terraform Test Results"
+            echo ""
+            echo "| Test Target | Result |"
+            echo "|---|---|"
+            cat "$TABLE_ROWS_FILE"
+            echo ""
+            echo "## Selected Test Inputs"
+            echo ""
+            if [ ${#TFVARS_FILES[@]} -eq 0 ]; then
+              echo "No examples.tfvars files were selected. Ran default test."
+            else
+              echo '```text'
+              printf '%s\n' "${TFVARS_FILES[@]}"
+              echo '```'
+            fi
+            echo ""
+            cat "$DETAILS_FILE"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Cleanup
+          rm -f "$TABLE_ROWS_FILE" "$DETAILS_FILE"
 
           exit "$EXIT_CODE"
