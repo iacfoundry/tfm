@@ -1,5 +1,4 @@
 provider "databricks" {
-  alias           = "account"
   host            = "https://accounts.azuredatabricks.net"
   auth_type       = "github-oidc-azure"
   account_id      = var.databricks_account_id

@@ -1,7 +1,7 @@
 resource "databricks_metastore_assignment" "account_metastore_assignment" {
   for_each = { for key, value in var.databricks_metastore_assignment_data : key => value if value.enabled && value.provider_scope == "account" }
 
-  provider = databricks.account
+  provider = databricks
 
   # Required Arguments
   metastore_id = coalesce(

@@ -2,8 +2,7 @@ module "databricks_group" {
   source = "./modules/databricks/databricks/group"
 
   providers = {
-    databricks           = databricks.account
-    databricks.account   = databricks.account
+    databricks           = databricks
     databricks.workspace = databricks.workspace
   }
 
@@ -12,12 +11,26 @@ module "databricks_group" {
   depends_on = [module.azurerm_databricks_workspace]
 }
 
+module "databricks_group_member" {
+  source = "./modules/databricks/databricks/group_member"
+
+  providers = {
+    databricks           = databricks
+    databricks.workspace = databricks.workspace
+  }
+
+  databricks_group_member_data = var.databricks_group_member_data
+  databricks_group_output      = module.databricks_group.databricks_group_output_names
+  # databricks_user_output              = module.databricks_user.databricks_user_output_names
+  databricks_service_principal_output = module.databricks_service_principal.databricks_service_principal_output_names
+  azurerm_databricks_workspace_output = module.azurerm_databricks_workspace.azurerm_databricks_workspace_output_names
+}
+
 module "databricks_metastore" {
   source = "./modules/databricks/databricks/metastore"
 
   providers = {
-    databricks           = databricks.account
-    databricks.account   = databricks.account
+    databricks           = databricks
     databricks.workspace = databricks.workspace
   }
 
@@ -30,8 +43,7 @@ module "databricks_metastore_assignment" {
   source = "./modules/databricks/databricks/metastore_assignment"
 
   providers = {
-    databricks           = databricks.account
-    databricks.account   = databricks.account
+    databricks           = databricks
     databricks.workspace = databricks.workspace
   }
 
@@ -46,8 +58,7 @@ module "databricks_metastore_data_access" {
   source = "./modules/databricks/databricks/metastore_data_access"
 
   providers = {
-    databricks           = databricks.account
-    databricks.account   = databricks.account
+    databricks           = databricks
     databricks.workspace = databricks.workspace
   }
 
@@ -60,8 +71,7 @@ module "databricks_service_principal" {
   source = "./modules/databricks/databricks/service_principal"
 
   providers = {
-    databricks           = databricks.account
-    databricks.account   = databricks.account
+    databricks           = databricks
     databricks.workspace = databricks.workspace
   }
 
@@ -75,8 +85,7 @@ module "databricks_service_principal_secret" {
   source = "./modules/databricks/databricks/service_principal_secret"
 
   providers = {
-    databricks           = databricks.account
-    databricks.account   = databricks.account
+    databricks           = databricks
     databricks.workspace = databricks.workspace
   }
 
@@ -91,8 +100,7 @@ module "databricks_storage_credential" {
   source = "./modules/databricks/databricks/storage_credential"
 
   providers = {
-    databricks           = databricks.account
-    databricks.account   = databricks.account
+    databricks           = databricks
     databricks.workspace = databricks.workspace
   }
 

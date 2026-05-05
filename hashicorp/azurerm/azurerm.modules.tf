@@ -5,6 +5,14 @@ module "azurerm_custom_ip_prefix" {
   # azurerm_parent_custom_ip_prefix_output = module.azurerm_parent_custom_ip_prefix.azurerm_parent_custom_ip_prefix_output_names
 }
 
+module "azurerm_databricks_workspace" {
+  source = "./modules/hashicorp/azurerm/databricks_workspace"
+
+  azurerm_databricks_workspace_data                        = module.azurerm_defaults.merge["azurerm_databricks_workspace"]
+  azurerm_subnet_network_security_group_association_output = module.azurerm_subnet_network_security_group_association.azurerm_subnet_network_security_group_association_output
+  azurerm_virtual_network_output                           = module.azurerm_virtual_network.azurerm_virtual_network_output_names
+}
+
 module "azurerm_key_vault" {
   source = "./modules/hashicorp/azurerm/key_vault"
 

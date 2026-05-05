@@ -1,7 +1,7 @@
 resource "databricks_metastore_data_access" "account_metastore_data_access" {
   for_each = { for key, value in var.databricks_metastore_data_access_data : key => value if value.enabled && value.provider_scope == "account" }
 
-  provider = databricks.account
+  provider = databricks
 
   # Required Arguments
   name = each.value.name

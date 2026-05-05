@@ -1,7 +1,7 @@
 resource "databricks_storage_credential" "account_storage_credential" {
   for_each = { for key, value in var.databricks_storage_credential_data : key => value if value.enabled && value.provider_scope == "account" }
 
-  provider = databricks.account
+  provider = databricks
 
   # Required Arguments
   name = each.value.name

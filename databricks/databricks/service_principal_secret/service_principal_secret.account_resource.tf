@@ -1,7 +1,7 @@
 resource "databricks_service_principal_secret" "account_service_principal_secret" {
   for_each = { for key, value in var.databricks_service_principal_secret_data : key => value if value.enabled && value.provider_scope == "account" }
 
-  provider = databricks.account
+  provider = databricks
 
   # Required Arguments
   service_principal_id = coalesce(

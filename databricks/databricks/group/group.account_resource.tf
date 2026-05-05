@@ -1,7 +1,7 @@
 resource "databricks_group" "account_group" {
   for_each = { for key, value in var.databricks_group_data : key => value if value.enabled && value.provider_scope == "account" }
 
-  provider = databricks.account
+  provider = databricks
 
   # Required Arguments
   display_name = each.value.display_name

@@ -28,6 +28,10 @@ variable "databricks_group_data" {
   default = {}
 }
 
+variable "databricks_group_member_data" {
+  default = {}
+}
+
 variable "databricks_ip_access_list_data" {
   default = {}
 }
@@ -59,7 +63,6 @@ variable "databricks_secret_scope_data" {
 variable "azurerm_key_vault_output" {
   default = {}
 }
-
 
 variable "databricks_service_principal_data" {
   default = {}

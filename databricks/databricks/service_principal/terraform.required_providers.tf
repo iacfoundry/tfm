@@ -4,7 +4,7 @@ terraform {
       source = "databricks/databricks"
 
       configuration_aliases = [
-        databricks.account,
+        databricks,
         databricks.workspace
       ]
     }
