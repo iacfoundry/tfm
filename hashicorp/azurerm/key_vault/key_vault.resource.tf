@@ -26,7 +26,7 @@ resource "azurerm_key_vault" "key_vault" {
 
 
   dynamic "contact" {
-    for_each = each.value.contact != null ? each.value.contact : []
+    for_each = each.value.contact != null ? [each.value.contact] : []
     content {
       # Required Arguments
       email = contact.value.email
@@ -39,7 +39,7 @@ resource "azurerm_key_vault" "key_vault" {
   }
 
   dynamic "network_acls" {
-    for_each = each.value.network_acls != null ? each.value.network_acls : []
+    for_each = each.value.network_acls != null ? [each.value.network_acls] : []
     content {
       # Required Arguments
       bypass         = network_acls.value.bypass

@@ -5,5 +5,6 @@ azurerm_key_vault_secret_data = {
     enabled      = true
     key_vault_id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/example-rg-01/providers/Microsoft.KeyVault/vaults/example-keyvault-01"
     name         = "example-secret-01"
+    value        = "example-value-01"
   }
 }
