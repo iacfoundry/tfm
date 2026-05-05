@@ -26,7 +26,7 @@ run "mock_plan" {
   providers = {
     azurerm              = azurerm.mock
     azuread              = azuread.mock
-    databricks.account   = databricks.mock_account
+    databricks           = databricks.mock_account
     databricks.workspace = databricks.mock_workspace
   }
   command = plan
