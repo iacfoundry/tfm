@@ -5,6 +5,21 @@ module "azurerm_custom_ip_prefix" {
   # azurerm_parent_custom_ip_prefix_output = module.azurerm_parent_custom_ip_prefix.azurerm_parent_custom_ip_prefix_output_names
 }
 
+module "azurerm_key_vault" {
+  source = "./modules/hashicorp/azurerm/key_vault"
+
+  azurerm_key_vault_data = var.azurerm_key_vault_data
+  azurerm_subnet_output = module.azurerm_subnet.azurerm_subnet_output_names
+  # azurerm_tenant_output = module.azurerm_tenant.azurerm_tenant_output_names
+}
+
+module "azurerm_key_vault_secret" {
+  source = "./modules/hashicorp/azurerm/key_vault_secret"
+
+  azurerm_key_vault_secret_data = var.azurerm_key_vault_secret_data
+  azurerm_key_vault_output = module.azurerm_key_vault.azurerm_key_vault_output_names
+}
+
 module "azurerm_nat_gateway" {
   source = "./modules/hashicorp/azurerm/nat_gateway"
 
